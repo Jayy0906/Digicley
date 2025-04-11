@@ -1,39 +1,83 @@
 <?php
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
+
+require 'PHPMailer/src/PHPMailer.php';
+require 'PHPMailer/src/SMTP.php';
+require 'PHPMailer/src/Exception.php';
+
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    // Get form data
-    $name = htmlspecialchars($_POST['name']);
-    $email = filter_var($_POST['email'], FILTER_SANITIZE_EMAIL);
-    $subject = htmlspecialchars($_POST['subject']);
-    $message = htmlspecialchars($_POST['message']);
+    // Honeypot (should be empty)
+    if (!empty($_POST['website'])) {
+        die("Bot detected.");
+    }
 
-    // Validate the input
-    if (!empty($name) && !empty($email) && !empty($subject) && !empty($message)) {
-        $to = "info@digicley.com"; // Replace with your email address
-        $headers = "From: " . $email . "\r\n";
-        $headers .= "Reply-To: " . $email . "\r\n";
-        $mail_subject = "New Contact Form Submission: " . $subject;
-        $body = "Name: $name\nEmail: $email\nSubject: $subject\nMessage:\n$message";
+    // Math CAPTCHA (e.g., 3 + 5 = 8)
+    if (trim($_POST['captcha']) !== '8') {
+        die("Captcha failed. Please try again.");
+    }
 
-        // Send the email to your email address
-        if (mail($to, $mail_subject, $body, $headers)) {
-            // Auto-response email to the user
-            $user_subject = "Thank You for Contacting Us!";
-            $user_message = "Hi $name,\n\nThank you for reaching out to us. We have received your message:\n\n$message\n\nWe will get back to you shortly.\n\nBest Regards,\nYour Company Name";
-            $user_headers = "From: info@digicley.com\r\n";
+    // Clean input
+    $name    = htmlspecialchars(trim($_POST['name']));
+    $email   = filter_var(trim($_POST['email']), FILTER_SANITIZE_EMAIL);
+    $subject = isset($_POST['subject']) ? htmlspecialchars(trim($_POST['subject'])) : 'Contact Form Message';
+    $message = htmlspecialchars(trim($_POST['message']));
 
-            // Send the thank you email to the user
-            if (mail($email, $user_subject, $user_message, $user_headers)) {
-                echo "Your message has been sent successfully! A confirmation email has also been sent to your address.";
-            } else {
-                echo "Message sent, but there was an error sending the confirmation email.";
-            }
-        } else {
-            echo "There was an error sending your message. Please try again later.";
+    // Simple spam filters
+    if (preg_match('/http|https|tinyurl|bit\.ly/i', $message)) {
+        die("⚠️ Links are not allowed in messages.");
+    }
+    if (preg_match('/[а-яА-ЯЁё]/u', $name)) {
+        die("⚠️ Please use English characters only.");
+    }
+
+    if (!empty($name) && !empty($email) && !empty($message)) {
+        $yourEmail = "info@digicley.com";         // ✅ Hostinger email
+        $yourPassword = "Digicley@1231";          // 🔐 Your Hostinger email password
+
+        // Send to you
+        $mail = new PHPMailer(true);
+        try {
+            $mail->isSMTP();
+            $mail->Host       = 'smtp.hostinger.com';
+            $mail->SMTPAuth   = true;
+            $mail->Username   = $yourEmail;
+            $mail->Password   = $yourPassword;
+            $mail->SMTPSecure = 'tls';
+            $mail->Port       = 587;
+
+            $mail->setFrom($yourEmail, 'Website Contact');
+            $mail->addAddress($yourEmail);
+            $mail->addReplyTo($email, $name);
+            $mail->Subject = "New Contact Form: $subject";
+            $mail->Body    = "Name: $name\nEmail: $email\nMessage:\n$message";
+            $mail->send();
+
+            // Auto-reply
+            $reply = new PHPMailer(true);
+            $reply->isSMTP();
+            $reply->Host       = 'smtp.hostinger.com';
+            $reply->SMTPAuth   = true;
+            $reply->Username   = $yourEmail;
+            $reply->Password   = $yourPassword;
+            $reply->SMTPSecure = 'tls';
+            $reply->Port       = 587;
+
+            $reply->setFrom($yourEmail, 'Digicley Team');
+            $reply->addAddress($email, $name);
+            $reply->Subject = "Thanks for contacting us!";
+            $reply->Body    = "Hi $name,\n\nThanks for your message! We'll get back to you shortly.\n\n- Digicley Team";
+
+            $reply->send();
+
+            echo "✅ Your message has been sent. A confirmation email was sent to you.";
+        } catch (Exception $e) {
+            echo "❌ Mailer Error: " . $mail->ErrorInfo;
         }
     } else {
-        echo "All fields are required. Please fill out the form completely.";
+        echo "⚠️ All fields are required.";
     }
 } else {
-    echo "Invalid request method.";
+    echo "❌ Invalid request method.";
 }
 ?>
